@@ -11,7 +11,7 @@ import (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "Pingify",
+	Use:   "pingify",
 	Short: "A fast, AI-powered CLI tool for testing APIs during development",
 	Long: `Pingify is a developer-friendly CLI tool designed for real-time API testing
 and debugging during development. 

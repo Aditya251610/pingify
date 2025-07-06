@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net/smtp"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -27,12 +28,10 @@ type MonitorLog struct {
 	Success       bool          `json:"success"`
 }
 
+// --- Utility Functions ---
 func isValidURL(rawURL string) bool {
 	parsedURL, err := url.ParseRequestURI(rawURL)
-	if err != nil {
-		return false
-	}
-	return parsedURL.Scheme != "" && parsedURL.Host != ""
+	return err == nil && parsedURL.Scheme != "" && parsedURL.Host != ""
 }
 
 func hashURL(url string) string {
@@ -43,43 +42,74 @@ func hashURL(url string) string {
 
 func appendLogToFile(filename string, log MonitorLog) error {
 	var logs []MonitorLog
-
 	data, err := ioutil.ReadFile(filename)
 	if err == nil {
 		json.Unmarshal(data, &logs)
 	}
-
 	logs = append(logs, log)
 
 	newData, err := json.MarshalIndent(logs, "", "  ")
 	if err != nil {
 		return err
 	}
-
 	return ioutil.WriteFile(filename, newData, 0644)
 }
 
-func ExecuteMonitor(rawURL, method, headers, body, timeout string, pretty bool, interval, duration, threshold time.Duration) (string, string, time.Duration, int, string, time.Time, error, bool) {
-	if rawURL == "" || !isValidURL(rawURL) {
-		return "", "", 0, 0, "", time.Time{}, errors.New("URL is required"), false
+// --- Email Alert ---
+func sendEmailAlert(message string, userEmail string) {
+	smtpHost := os.Getenv("SMTP_HOST")
+	smtpPort := os.Getenv("SMTP_PORT")
+	sender := os.Getenv("EMAIL_SENDER")
+	password := os.Getenv("EMAIL_PASSWORD")
+
+	if smtpHost == "" || smtpPort == "" || sender == "" || password == "" || userEmail == "" {
+		fmt.Println("⚠️ Email config missing or user email not provided")
+		return
+	}
+
+	auth := smtp.PlainAuth("", sender, password, smtpHost)
+	subject := "Subject: Pingify API Alert!\r\n"
+	body := "\r\n" + message
+
+	err := smtp.SendMail(smtpHost+":"+smtpPort, auth, sender, []string{userEmail}, []byte(subject+body))
+	if err != nil {
+		fmt.Println("❌ Email alert failed:", err)
+		return
+	}
+	fmt.Println("✅ Email alert sent to", userEmail)
+}
+
+// --- Monitor Logic ---
+func ExecuteMonitor(
+	rawURL, method, headers, body, timeout string,
+	pretty bool,
+	interval, duration, threshold time.Duration,
+	alert bool,
+	userEmail string,
+) (string, string, time.Duration, int, string, time.Time, error, bool) {
+	if !isValidURL(rawURL) {
+		return "", "", 0, 0, "", time.Time{}, errors.New("Invalid URL"), false
 	}
 
 	start := time.Now()
 	end := start.Add(duration)
 	lastStatus := 0
 	lastStatusText := ""
-	var exceeded bool
 	var err error
 
-	// Prepare log file path
 	logDir := "logs"
 	os.MkdirAll(logDir, os.ModePerm)
 	logFile := filepath.Join(logDir, fmt.Sprintf("monitor_%s.json", hashURL(rawURL)))
 
+	var totalChecks int
+	var thresholdExceeded int
+
 	for t := start; t.Before(end); t = t.Add(interval) {
+		totalChecks++
+
 		response, status, execDuration, reqErr := requester.ExecuteRequest(rawURL, method, headers, body, timeout, pretty)
 		if reqErr != nil {
-			fmt.Println("❌ Error:", reqErr)
+			fmt.Println("❌ Request Error:", reqErr)
 			err = reqErr
 			break
 		}
@@ -88,9 +118,10 @@ func ExecuteMonitor(rawURL, method, headers, body, timeout string, pretty bool, 
 		fmt.Println(response)
 		fmt.Println("⏱️ Execution Time:", execDuration)
 
-		exceeded = execDuration > threshold
+		exceeded := execDuration > threshold
 		if exceeded {
-			fmt.Println("⚠️ Response time exceeded threshold!")
+			thresholdExceeded++
+			fmt.Printf("🚨 Terminal Alert: API: %s exceeded threshold (%s > %s)\n", rawURL, execDuration, threshold)
 		}
 
 		lastStatus = status
@@ -107,15 +138,27 @@ func ExecuteMonitor(rawURL, method, headers, body, timeout string, pretty bool, 
 			Exceeded:      exceeded,
 			Success:       !exceeded && reqErr == nil,
 		}
-
 		appendLogToFile(logFile, log)
 
 		time.Sleep(interval)
 	}
 
-	return "Monitoring complete", rawURL, duration, lastStatus, lastStatusText, time.Now(), err, !exceeded && err == nil
+	success := true
+	failureRate := float64(thresholdExceeded) / float64(totalChecks)
+	const failureThreshold = 0.2 // 20%
+
+	if alert && duration > 2*time.Minute && failureRate >= failureThreshold {
+		message := fmt.Sprintf("⚠️ %d out of %d requests (%.2f%%) exceeded the threshold of %s.\nURL: %s",
+			thresholdExceeded, totalChecks, failureRate*100, threshold, rawURL)
+
+		sendEmailAlert(message, userEmail)
+		success = false
+	}
+
+	return "Monitoring complete", rawURL, duration, lastStatus, lastStatusText, time.Now(), err, success
 }
 
+// --- HTTP Status to Text ---
 func httpStatusText(code int) string {
 	switch code {
 	case 200:

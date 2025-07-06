@@ -32,7 +32,7 @@ type OpenAIResponse struct {
 	} `json:"error,omitempty"`
 }
 
-func GetSuggestionsFromLogs(logContent string) string {
+func GetSuggestionsFromLogs(logContent string, explain bool) string {
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		return "❌ OPENAI_API_KEY not found in environment."
@@ -42,18 +42,42 @@ func GetSuggestionsFromLogs(logContent string) string {
 		return "❌ Log file is empty. No content to analyze."
 	}
 
+	systemPrompt := `
+You are an expert API performance and architecture engineer embedded in a CLI tool.
+Your job is to analyze the given API monitoring logs and:
+
+1. Identify patterns in execution time, error rates, and thresholds.
+2. Detect bad response codes, spikes, or frequent threshold violations.
+3. Recommend concrete fixes like:
+   - Retry logic
+   - Timeout/backoff improvements
+   - Caching strategies
+   - Header tweaks (e.g. Accept-Encoding)
+   - Pagination or batching
+4. Output must contain these sections:
+   - 📊 Patterns Detected
+   - 🛠️ Code Suggestions (Go snippets if applicable)
+   - 💡 Dev Tips
+   - 🚨 Risk Alerts
+
+Respond in markdown-style CLI format using clear bullet points and code blocks.`
+
+	if explain {
+		systemPrompt += "\n\nAlso explain *why* each recommendation is made based on log behavior."
+	}
+
 	reqBody := OpenAIRequest{
 		Model:       "gpt-3.5-turbo-1106",
-		MaxTokens:   500,
+		MaxTokens:   700,
 		Temperature: 0.3,
 		Messages: []Message{
 			{
 				Role:    "system",
-				Content: "You're a performance expert for APIs. Analyze the logs and give suggestions to improve performance, reliability, or structure.",
+				Content: systemPrompt,
 			},
 			{
 				Role:    "user",
-				Content: fmt.Sprintf("Here is the API log file content:\n\n%s", logContent),
+				Content: fmt.Sprintf("Here is the API log file content (JSON format):\n\n%s", logContent),
 			},
 		},
 	}

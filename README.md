@@ -207,7 +207,7 @@ MIT License © [Aditya Sharma](https://github.com/Aditya251610)
 
 ## 📬 Contact
 
-📧 Email: aditya.sharma16062016@gmail.com  
+📧 Email: aditya.dev2516@gmail.com  
 🌐 GitHub: [Aditya251610](https://github.com/Aditya251610/pingify)
 
 ---

@@ -34,7 +34,7 @@ func isValidURL(rawURL string) bool {
 	return err == nil && parsedURL.Scheme != "" && parsedURL.Host != ""
 }
 
-func hashURL(url string) string {
+func HashURL(url string) string {
 	h := sha1.New()
 	h.Write([]byte(url))
 	return hex.EncodeToString(h.Sum(nil))
@@ -99,7 +99,7 @@ func ExecuteMonitor(
 
 	logDir := "logs"
 	os.MkdirAll(logDir, os.ModePerm)
-	logFile := filepath.Join(logDir, fmt.Sprintf("monitor_%s.json", hashURL(rawURL)))
+	logFile := filepath.Join(logDir, fmt.Sprintf("monitor_%s.json", HashURL(rawURL)))
 
 	var totalChecks int
 	var thresholdExceeded int

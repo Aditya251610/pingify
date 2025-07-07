@@ -1,28 +1,34 @@
-# Use Golang base image (latest stable that supports gotip)
-FROM golang:1.22 AS builder
+# ------------------------
+# Build Stage
+# ------------------------
+    FROM golang:1.22 AS builder
 
-# Install gotip to support Go 1.24.3+ features
-RUN go install golang.org/dl/gotip@latest && \
-    gotip download
-
-WORKDIR /app
-
-# Copy all project files
-COPY . .
-
-# Download dependencies using gotip
-RUN gotip mod tidy
-
-# Build the CLI tool using gotip
-RUN gotip build -o pingify main.go
-
-# Final image
-FROM debian:bullseye-slim
-
-WORKDIR /app
-
-# Copy the binary from builder
-COPY --from=builder /app/pingify /usr/local/bin/pingify
-
-# Set default entrypoint
-ENTRYPOINT ["pingify"]
+    # Install gotip and setup latest Go features
+    RUN go install golang.org/dl/gotip@latest && \
+        gotip download
+    
+    # Set environment variables for static build
+    ENV CGO_ENABLED=0 \
+        GOOS=linux \
+        GOARCH=amd64
+    
+    WORKDIR /app
+    
+    # Copy all project files
+    COPY . .
+    
+    # Tidy and build the static binary
+    RUN gotip mod tidy && \
+        gotip build -o pingify .
+    
+    # ------------------------
+    # Final Image (minimal, no glibc dependency)
+    # ------------------------
+    FROM scratch
+    
+    # Copy only the statically compiled binary
+    COPY --from=builder /app/pingify /pingify
+    
+    # Set entrypoint
+    ENTRYPOINT ["/pingify"]
+    

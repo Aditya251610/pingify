@@ -7,27 +7,28 @@
     RUN go install golang.org/dl/gotip@latest && \
         gotip download
     
-    # Set environment variables for static build
+    # Set environment for static binary build
     ENV CGO_ENABLED=0 \
         GOOS=linux \
         GOARCH=amd64
     
     WORKDIR /app
     
-    # Copy all project files
+    # Copy all source files
     COPY . .
     
-    # Tidy and build the static binary
+    # Download dependencies and build statically
     RUN gotip mod tidy && \
         gotip build -o pingify .
     
     # ------------------------
-    # Final Image (minimal, no glibc dependency)
+    # Final Image (with TLS support)
     # ------------------------
-    FROM scratch
+    FROM gcr.io/distroless/static-debian11
     
-    # Copy only the statically compiled binary
+    # Copy static binary and CA certificates for HTTPS
     COPY --from=builder /app/pingify /pingify
+    COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
     
     # Set entrypoint
     ENTRYPOINT ["/pingify"]

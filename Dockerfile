@@ -24,8 +24,5 @@ WORKDIR /app
 # Copy the binary from builder
 COPY --from=builder /app/pingify /usr/local/bin/pingify
 
-# Optional: Copy .env.example for reference
-COPY --from=builder /app/.env.example /app/.env.example
-
 # Set default entrypoint
 ENTRYPOINT ["pingify"]
